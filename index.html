@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <title></title>
+    <link rel="stylesheet" href="dist/reveal.css" />
+    <link rel="stylesheet" href="dist/theme/serif.css" id="theme" />
+    <link rel="stylesheet" href="plugin/highlight/zenburn.css" />
+	<link rel="stylesheet" href="css/layout.css" />
+	<link rel="stylesheet" href="plugin/customcontrols/style.css">
+
+
+
+    <script defer src="dist/fontawesome/all.min.js"></script>
+
+	<script type="text/javascript">
+		var forgetPop = true;
+		function onPopState(event) {
+			if(forgetPop){
+				forgetPop = false;
+			} else {
+				parent.postMessage(event.target.location.href, "app://obsidian.md");
+			}
+        }
+		window.onpopstate = onPopState;
+		window.onmessage = event => {
+			if(event.data == "reload"){
+				window.document.location.reload();
+			}
+			forgetPop = true;
+		}
+
+		function fitElements(){
+			const itemsToFit = document.getElementsByClassName('fitText');
+			for (const item in itemsToFit) {
+				if (Object.hasOwnProperty.call(itemsToFit, item)) {
+					var element = itemsToFit[item];
+					fitElement(element,1, 1000);
+					element.classList.remove('fitText');
+				}
+			}
+		}
+
+		function fitElement(element, start, end){
+
+			let size = (end + start) / 2;
+			element.style.fontSize = `${size}px`;
+
+			if(Math.abs(start - end) < 1){
+				while(element.scrollHeight > element.offsetHeight){
+					size--;
+					element.style.fontSize = `${size}px`;
+				}
+				return;
+			}
+
+			if(element.scrollHeight > element.offsetHeight){
+				fitElement(element, start, size);
+			} else {
+				fitElement(element, size, end);
+			}		
+		}
+
+
+		document.onreadystatechange = () => {
+			fitElements();
+			if (document.readyState === 'complete') {
+				if (window.location.href.indexOf("?export") != -1){
+					parent.postMessage(event.target.location.href, "app://obsidian.md");
+				}
+				if (window.location.href.indexOf("print-pdf") != -1){
+					let stateCheck = setInterval(() => {
+						clearInterval(stateCheck);
+						window.print();
+					}, 250);
+				}
+			}
+	};
+
+
+        </script>
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides"><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+## Surprises, Bugs, and Deep Dives: Lessons from a Python Upgrade
+
+**RND Light Talk**, July 2025
+
+<div class="" style="position: absolute; left: 0%; top: 70%; height: 30%; width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center" >
+
+Yonatan Bitton
+</br>
+[@bityob](https://linktr.ee/bityob)
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" data-visibility="hidden" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### `whoami`
+
+- Developer on the Core team at **Fortinet**
+- We provide cybersecurity protection for emails and more
+- Passionate about **Python**, enjoy solving tough **challenges** and understanding things **inside out**
+
+Notes:
+
+I’m Yonatan Bitton, part of the Core team at Fortinet, where we work on cybersecurity, including email protection and more.  
+I’m deeply passionate about Python, especially diving into how things work under the hood, and love tackling tough technical challenges.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### 🐍 Python 3.9 → 3.12: The Upgrade Journey
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Agenda / Upgrade Trail Map
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->Stage 0: Why upgrade? Why 3.12? Strategy?
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->Stage 1: Build Python 3.12
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Stage 2:  Installing & Resolving Package Issues
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->Stage 3: Running & Fixing
+- &shy;<!-- .element: class="fragment" data-fragment-index="5" -->Stage 4: Running 4k Tests — Reality Check
+- &shy;<!-- .element: class="fragment" data-fragment-index="6" -->Stage 5: QA + ~500 automation end-to-end flows
+- &shy;<!-- .element: class="fragment" data-fragment-index="7" -->Stage 6: Production rollout & real-world bugs
+
+Notes:
+This is the flow. We’ll spend more time where the most learning happened: dependency migration, runtime breakage, and tests.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 0
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 0: Why Upgrade? Why 3.12?
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->3.9 is EOL — security & ecosystem pressure.
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->3.12 is fast, stable, mature.
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->3.13 is too new — risky deps.
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->Large-scale pipeline — emails, files, links → scan → forward.
+- &shy;<!-- .element: class="fragment" data-fragment-index="5" -->Thousands of pods, millions of scans hourly.
+- &shy;<!-- .element: class="fragment" data-fragment-index="6" -->Strategy: 2 full local envs (3.9 & 3.12), side by side.
+- &shy;<!-- .element: class="fragment" data-fragment-index="7" -->Compare outputs, debug diffs, document all.
+
+
+Notes:
+- Emphasize real-world scale: high-volume, distributed scanning system.
+- Upgrade = delicate surgery on a living organism.
+- The double-local-environment strategy was critical: fast switching, reliable debugging, no guesswork.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250721224943.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 1
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 1: Build Python 3.12
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->Need OpenSSL 1.1.1 — not v3.
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->OpenSSL 3 blocks legacy SMTP servers
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Recompiled Python 3.12 with OpenSSL 1.1.1.
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->Packed to ZIP → used in Docker build.
+
+Notes:
+We could have used distro Python — but we needed a specific OpenSSL version for compatibility reasons (internal infra + external integrations). So we rolled our own build.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 1: Build Details
+
+```bash [1-4|6-11|13-15]
+# Downloading required python source
+wget https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz
+tar -xvf Python-3.12.9.tgz
+cd Python-3.12.9
+
+# Building python with openssl and pip to dedicated path
+./configure -C --with-ensurepip=install --with-openssl=/usr/local/ssl --prefix=/Python-3.12.9/compiled
+make clean
+make -s -j4
+./python -m ensurepip --default-pip
+make install
+
+# Saving the compiled python to zip file for later use
+cd ..
+tar -cvzf Python-3.12.9-openssl-1.1.1.built.tgz ./Python-3.12.9/compiled
+```
+
+Notes:
+Tell quick story: first build succeeded but Python couldn’t import SSL — because the shared libs weren’t on runtime path in container. Show how you fixed it.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 1: Build Usage 
+
+```bash
+RUN wget https://fake.io/Python-3.12.9-openssl-1.1.1.built.tgz -O Python.tgz &&\  
+    tar -xvf Python.tgz && \  
+    cp ./Python-3.12.9/compiled/* /usr/local/ -r  
+RUN python3 -c "import ssl; assert '1.1.1' in ssl.OPENSSL_VERSION"
+```
+
+Notes:
+Don’t trust the build: test it. Make this reproducible for others.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 2: Installing & Resolving Package Issues
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->Now Python 3.12 is ready to use
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->Run package install with `uv sync`
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Expect install errors due to 3.12 incompatibilities
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->Upgrade to latest version if possible
+- &shy;<!-- .element: class="fragment" data-fragment-index="5" -->Otherwise, find first version supporting Python 3.12
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### cchardet example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721123201.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721123357.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721124036.png" alt="" style="object-fit: scale-down">
+
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://docs.python.org/3/whatsnew/3.11.html">Source: https://docs.python.org/3/whatsnew/3.11.html</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Package didn't update in last years
+
+<img src="attachments/Pasted image 20250722121055.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But there is a pre-release version
+
+<img src="attachments/Pasted image 20250721124249.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+There is also a fork option
+
+<img src="attachments/Pasted image 20250722121348.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722094741.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722121534.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Although a popular fork exists, I chose to stick with the original `cchardet` after verifying that the pre-release only included safe recompilation changes — switching packages entirely felt riskier.
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### numpy example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721124622.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721124716.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Can't upgrade `numpy` since we have an internal dependency that is pinned to this specific version
+
+```bash
+> $ uv lock
+  × No solution found when resolving dependencies for split:
+  ╰─▶ Because some-internal-package==1.0.67 depends on numpy==1.22.4 and your project depends
+   on numpy>1.22.4, 
+   we can conclude that your project and some-internal-package==1.0.67 are incompatible.
+      And because your project depends on some-internal-package==1.0.67, 
+      we can conclude that your project's requirements are unsatisfiable.
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721125256.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+`uv` to the rescue! 
+<img src="attachments/Pasted image 20250721125321.png" alt="" style="object-fit: scale-down">
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://docs.astral.sh/uv/concepts/resolution/#dependency-constraints">Source: https://docs.astral.sh/uv/concepts/resolution/#dependency-constraints</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Unblocked upgrade with `override-metadata`; sent PR to fix deps.
+
+<img src="attachments/Pasted image 20250721125524.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 3
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 3: Running & Fixing
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->First full run under Python 3.12 exposed multiple issues
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->This stage was mostly trial-and-error: issues only revealed themselves at runtime, requiring quick investigation and targeted fixes
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Common problems: missing imports, deprecated APIs, incompatible packages
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->After several iterations: ✅ system booted and app ran locally
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### pinecone example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724130225.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721140236.png" alt="" style="width: 750px; object-fit: fill">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722122444.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721140502.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722122642.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But, why we failed on `pinecone[grpc]` which we didn't install?
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Looks good, no?
+
+<img src="attachments/Pasted image 20250721141013.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721141106.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Pinecone expected a missing `grpc` to raise `ImportError`, but it was installed via an unrelated package with the wrong version — leading to `AttributeError` instead
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 5
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 4: Running 4k Tests — Reality Check
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->Ran full test suite on GitHub & locally
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->Most tests passed, but some (~100) failed
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Next: digging into a few tricky and interesting issues found
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### patool example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724130510.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+$BIN_PATH/pytest ./tests --lf -k test_mark_as_failed_passes_mal_verdict_to_root --trace
+```
+
+<img src="attachments/Pasted image 20250721150826.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+PatoolError: unknown archive format for file `/tmp/tmpxhyejsxy'
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Verified in both environments that the `patool` version **did not** change
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721151801.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724130852.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Confirmed that the input file used was **exactly the same**
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Let's go deeper...
+
+```python
+patoolib.get_archive_format(self.file_path)
+```
+<img src="attachments/Pasted image 20250721152230.png" alt="" style="object-fit: scale-down">
+
+
+<img src="attachments/Pasted image 20250721152241.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721152346.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+patoolib.util.guess_mime(self.file_path)
+```
+<img src="attachments/Pasted image 20250721152416.png" alt="" style="object-fit: scale-down">
+
+
+<img src="attachments/Pasted image 20250721152427.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721152448.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721152533.png" alt="" style="object-fit: scale-down">
+
+
+<img src="attachments/Pasted image 20250721152604.png" alt="" style="object-fit: scale-down">
+
+
+<img src="attachments/Pasted image 20250721152614.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+We don't install `file` explicitly, so where it come from?
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Checking for **reverse** dependency on `file`
+
+```bash
+$ apt-cache rdepends --installed file
+file
+Reverse Depends:
+  libmagic1
+  mailcap
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250721152909.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Since no `python3.9`, must install `mime-support` explicitly
+
+<img src="attachments/Pasted image 20250721153143.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724145007.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### URL parsing example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724145043.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+# python3.9
+>>> find_urls_in_data("http:google.com")
+[
+	'http:///google.com'
+]
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+# python3.12
+>>> find_urls_in_data("http:google.com")
+[
+	'http:google.com'
+]
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+def find_urls_in_data(data)
+	results = []
+	.....
+	for url in found_urls:
+		# Until now, the same result on both versions
+		results.append(
+			# Meaning the problem is here...
+			safe_url_decode(url)
+		)
+	return results
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+def safe_url_decode(data)
+	...
+	furl_url = furl.furl(url).url
+	...
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722003817.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722003757.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722004347.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722004515.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722004550.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+for i in {9..12}; \
+  do uvx --python 3.$i ipython -c \
+    'import sys; print(sys.version); import urllib; urllib.parse.urlunsplit(("http", "", "google.com", "", ""))'; \
+done
+```
+
+<img src="attachments/Lectures/python_3.12_upgrade_slides/Pasted image 20250722005857.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+for i in {1..9}; \
+  do uvx --python 3.12.$i ipython -c \
+    'import sys; print(sys.version); import urllib; urllib.parse.urlunsplit(("http", "", "google.com", "", ""))'; \
+done
+```
+
+<img src="attachments/Pasted image 20250722010338.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722011352.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722010952.png" alt="" style="object-fit: scale-down">
+
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://github.com/python/cpython/issues/85110">Source: https://github.com/python/cpython/issues/85110</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Beautiful Soup Example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Test failed because email output is different
+
+<img src="attachments/Pasted image 20250724132054.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+# python3.9
+<html><body><div dir="ltr">HELLO </div>
+</body></html>
+```
+
+```python
+# python 3.12
+<html>
+ <body>
+  <div dir="ltr">
+   HELLO
+  </div>
+ </body>
+</html>
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722082609.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Before `set_payload`, the payload looks the same 
+
+<img src="attachments/Pasted image 20250722083030.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722083232.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But after `set_payload`, the payload looks different
+
+<img src="attachments/Pasted image 20250722083258.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Let's try minimal repro in notebook...
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Didn’t work
+
+<img src="attachments/Pasted image 20250722083505.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+There is an hidden byte in `HELLO` last char... trying with `bytes`
+
+<img src="attachments/Pasted image 20250724145235.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Let's use pickle to be sure it's the **real same object**
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+This is weird... this is **NOT** simple string
+
+<img src="attachments/Pasted image 20250722084724.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+What??
+
+<img src="attachments/Pasted image 20250722085241.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+🤦
+
+<img src="attachments/Pasted image 20250722085410.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+What's happening inside `set_payload`?
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+We call `encode` on the `payload` variable 
+
+
+<img src="attachments/Pasted image 20250722085917.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Encoding `bs4.BeautifulSoup` vs encoding simple `str`
+
+<img src="attachments/Pasted image 20250722091526.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722091729.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722091843.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+The commit set `errors` value to `surrogateescape`
+
+<img src="attachments/Pasted image 20250722092020.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+How this errors is related at all? why only on bs4 object?
+<img src="attachments/Pasted image 20250722093028.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+The `surrogateescape` string is going to `indent_level` variable...
+
+<img src="attachments/Pasted image 20250722093650.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+No matter what string we use
+
+<img src="attachments/Pasted image 20250722093428.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+It evaluates to True in a boolean context
+
+<img src="attachments/Pasted image 20250722124442.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 20
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 5: QA & End-to-End Testing
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->Deployed to full-scale **testing environment**, mirroring production
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->**5 days** of QA: human exploratory testing + ~500 automated E2E tests
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Monitored failures via Sentry, logs, and runtime alerts
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### SMTP starttls example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724145526.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724145634.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722095058.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python [1-8|5-6]
+if not self.use_ssl and self.use_tls:
+    self.connection.ehlo()
+    context = None
+    if self.ssl_certfile and self.ssl_keyfile:
+        context = ssl.create_default_context()
+        context.load_cert_chain(certfile=self.ssl_certfile, keyfile=self.ssl_keyfile)
+    self.connection.starttls(context=context)
+    self.connection.ehlo()
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### SAML example
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250724132846.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+No exception in Sentry, only the worker died suddenly🤷
+
+<img src="attachments/Pasted image 20250724145727.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+No logs either
+
+<img src="attachments/Pasted image 20250724133201.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Let's try to reproduce the issue in shell
+
+```python
+factory = APIRequestFactory()  
+user = User.objects.get(pk=12674)  
+payload = urlencode({'SAMLResponse': ''})  
+request = factory.post(  
+    '/api/saml_login/foobar/?acs',  
+    data=payload,  
+    content_type='application/x-www-form-urlencoded',  
+    HTTP_HOST="api.foo.bar.io",  
+    wsgi_url_scheme='https',  
+    SERVER_PORT='443',  
+)  
+force_authenticate(request, user=User.objects.get(pk=12674))  
+view = SamlAuthTokenViewSet.as_view({'post': 'post'})  
+view(request, uuid_id="f042fb42-4ac1-4e5a-bdb3-db286af56873")
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Floating point exception?!
+
+<img src="attachments/Pasted image 20250724133447.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+gdb $BIN_PATH/python core.2874
+```
+
+<img src="attachments/Pasted image 20250722101521.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Related to `xmlsec` package
+
+<img src="attachments/Pasted image 20250722101735.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722102403.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+We use this package as part of with SAML signature validation process 
+
+<img src="attachments/Pasted image 20250722102544.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722104604.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722102730.png" alt="" style="object-fit: scale-down">
+
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://github.com/xmlsec/python-xmlsec/issues/277">Source: https://github.com/xmlsec/python-xmlsec/issues/277</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Minimal reproduce
+
+```python
+import io
+import xmlsec
+from lxml import etree
+
+stream = io.BytesIO(b"""<?xml version="1.0" encoding="UTF-8"?>
+<Envelope xmlns="urn:envelope" ID="ef115a20-cf73-11e5-aed1-3c15c2c2cc88">
+  <Data>
+	Hello, World!
+  </Data>
+</Envelope>
+""")
+root = etree.parse(stream).getroot()
+xmlsec.tree.add_ids(root, ["ID"])
+print(etree.tostring(root, pretty_print=True).decode())
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+We use `lxml` to create xml object and then sending this object to `xmlsec`
+
+<img src="attachments/Pasted image 20250722103037.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But why does this cause a crash?
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Using different `libxml2` versions together...
+
+<img src="attachments/Pasted image 20250722103213.png" alt="" style="object-fit: scale-down">
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://github.com/xmlsec/python-xmlsec/pull/246">Source: https://github.com/xmlsec/python-xmlsec/pull/246</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722103412.png" alt="" style="object-fit: scale-down">
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://python-social-auth.readthedocs.io/en/latest/backends/saml.html">Source: https://python-social-auth.readthedocs.io/en/latest/backends/saml.html</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Fix was to build `lxml` from source, so it will use the same system `libxml2` library
+
+<img src="attachments/Pasted image 20250722103902.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722104015.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 6: Production Rollout
+
+- &shy;<!-- .element: class="fragment" data-fragment-index="1" -->QA approved, all checks passed ✅
+- &shy;<!-- .element: class="fragment" data-fragment-index="2" -->Begin with partial rollout (e.g., APM pods)
+- &shy;<!-- .element: class="fragment" data-fragment-index="3" -->Gradual deployment by region — smallest to largest
+- &shy;<!-- .element: class="fragment" data-fragment-index="4" -->Continuous monitoring:
+    - &shy;<!-- .element: class="fragment" data-fragment-index="5" -->No Sentry errors
+    - &shy;<!-- .element: class="fragment" data-fragment-index="6" -->No customer complaints
+    - &shy;<!-- .element: class="fragment" data-fragment-index="7" -->System behaving as expected
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 27
+
+APM went well
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 27
+
+Australia too
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 28
+
+Even Europe...
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 28
+
+**If** all goes well until tomorrow, we will continue with US👏...
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+...But Things Didn't Go As Planned 😬
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+New SSL Errors, customers complains they don't get their emails...
+
+<img src="attachments/Pasted image 20250724150634.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Rollback all production 😔
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Failing when we use `STARTTLS`, the context here is `None`
+
+<img src="attachments/Pasted image 20250722110450.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+It's using the `stdlib` context method 
+
+<img src="attachments/Pasted image 20250722110658.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Shouldn’t it work, assuming the context is less restricted?
+<img src="attachments/Pasted image 20250722110727.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722110851.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```
+openssl s_client -connect fake.domain:25 -starttls smtp
+```
+
+<img src="attachments/Pasted image 20250722111147.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+```python
+server = smtplib.SMTP('fake.domain', local_hostname=settings.NAT_DNS_NAME)
+server.set_debuglevel(1)
+server.ehlo(name=settings.NAT_DNS_NAME)
+context = ssl._create_stdlib_context()
+context.minimum_version = ssl.TLSVersion.TLSv1
+server.starttls(context=context)
+server.quit()
+```
+
+<img src="attachments/Pasted image 20250722111257.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Maybe cipher related? looking for `DHE-RSA-AES256-SHA`
+
+```python
+import ssl
+context = ssl._create_stdlib_context()
+print("\n".join(cipher['name'] for cipher in context.get_ciphers()))
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Indeed not supported...
+
+<img src="attachments/Pasted image 20250722111534.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722111553.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But our installed `openssl` is supporting this type of cipher
+
+<img src="attachments/Pasted image 20250722111724.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+Let's try again with missing cipher... 
+
+```python
+server = smtplib.SMTP('fake.domain', local_hostname=settings.NAT_DNS_NAME)
+server.set_debuglevel(1)
+server.ehlo(name=settings.NAT_DNS_NAME)
+context = ssl._create_stdlib_context()
+context.minimum_version = ssl.TLSVersion.TLSv1
+context.options &= ~ssl.OP_NO_SSLv3
+context.check_hostname = False
+context.verify_mode = ssl.CERT_NONE
+context.set_ciphers(":".join([x["name"] for x in context.get_ciphers()] + [
+	'DHE-RSA-AES256-SHA',
+]))
+server.starttls(context=context)
+server.quit()
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722111836.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722111851.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+But wait — we’re already using OpenSSL v1, which is less strict by default.
+So why did these errors appear only in Python 3.12, but not in 3.9?
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722112659.png" alt="" style="object-fit: scale-down">
+
+
+<div style="position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 40%; color: gray;">
+<a href="https://github.com/python/cpython/pull/25778">Source: https://github.com/python/cpython/pull/25778</a>
+</div>
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722112541.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722112553.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+In Python 3.9, the default OpenSSL security level was 1.
+Starting from Python 3.10, the default is level 2 — even when using OpenSSL 1
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722112802.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+<img src="attachments/Pasted image 20250722112819.png" alt="" style="object-fit: scale-down">
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+So, for legacy SMTP servers, we explicitly allow weaker SSL connections — but the default configuration is now much stricter
+
+```python
+if self.use_weak_ssl_encryption:  
+	# Setting @SECLEVEL=1
+	# Adding missing ciphers removed in python3.10
+	# Support minimum TLSv1 version
+	# etc.
+    context = self.create_weak_ssl_context()  
+else:  
+    context = ssl.create_default_context()
+```
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Day 30
+
+**✅ Python 3.12 fully deployed and stable in production.**
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Takeaways
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 1 Takeaways: Planning & Environment Setup
+
+- Plan before you start: prepare robust local environments for debugging
+- Audit your steps — documenting the path helps later troubleshooting
+- Prefer the official Python builds when possible; if compiling yourself, verify it thoroughly
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 2 Takeaways: Installing & Updating Packages
+
+- 🔄 Update to the latest package versions when compatible
+- Find the first version that supports Python 3.12 if needed
+- 🔧 Some edge cases require manual overrides and patching
+- ⚠ Be cautious with indirect dependencies — they may introduce silent conflicts
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 3 Takeaways: Runtime Failures & Debugging
+
+- 🕵 Many issues appear only at runtime — trial and error is inevitable
+- Compare behavior across versions to pinpoint changes
+- If a test fails: don’t patch blindly — it might hide a deeper problem
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 4 Takeaways: Testing in CI & Local
+
+- Run your full test suite in **both** local and CI environments
+- Treat differences seriously — don’t ignore failing tests
+- Even small Python upgrades may introduce meaningful changes in behavior
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Stage 5 Takeaways: QA & Monitoring
+
+- Use the full power of the QA team — they’ll catch what tests missed
+- Expect bugs in edge cases and workflows you didn’t simulate
+- Monitoring (logs, Sentry, metrics, customer feedback) is your safety net
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### 🚀 Stage 6 Takeaways: Production Deployment
+
+- Deploy slowly and incrementally — start with low-risk services
+- Production is always the best testing environment (for better or worse)
+- Stay alert and respond quickly — be ready with hotfixes as needed
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### 🔁 Final Recap: Key Lessons from the Upgrade
+
+- Upgrades are a journey, not a switch — plan, test, iterate
+- Python version changes can expose hidden tech debt
+- Good tooling (like `uv`, Sentry, CI) makes the process manageable
+- Stay curious, cautious, and collaborative — it's a team effort
+</div></script></section><section  data-markdown><script type="text/template"><!-- .slide: class="drop" -->
+<div class="" style="position: absolute; left: 0px; top: 0px; height: 700px; width: 1300px; min-height: 700px; display: flex; flex-direction: column; align-items: center; justify-content: center" absolute="true">
+
+### Thank You!
+### Any Questions?
+
+<div class="" style="position: absolute; left: 0%; top: 70%; height: 30%; width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center" >
+
+Yonatan Bitton [@bityob](https://linktr.ee/bityob)
+</div>
+
+<div class="" style="position: absolute; left: 60%; top: 70%; height: 30%; width: 40%; display: flex; flex-direction: column; align-items: center; justify-content: center" >
+
+<a href="https://linktr.ee/bityob">linktr.ee/bityob</a>
+</div>
+</div></script></section></div>
+    </div>
+
+    <script src="dist/reveal.js"></script>
+
+    <script src="plugin/markdown/markdown.js"></script>
+    <script src="plugin/highlight/highlight.js"></script>
+    <script src="plugin/zoom/zoom.js"></script>
+    <script src="plugin/notes/notes.js"></script>
+    <script src="plugin/math/math.js"></script>
+	<script src="plugin/mermaid/mermaid.js"></script>
+	<script src="plugin/chart/chart.min.js"></script>
+	<script src="plugin/chart/plugin.js"></script>
+	<script src="plugin/customcontrols/plugin.js"></script>
+	<script src="plugin/elapsed-time-bar/elapsed-time-bar.js"></script>
+
+    <script>
+      function extend() {
+        var target = {};
+        for (var i = 0; i < arguments.length; i++) {
+          var source = arguments[i];
+          for (var key in source) {
+            if (source.hasOwnProperty(key)) {
+              target[key] = source[key];
+            }
+          }
+        }
+        return target;
+      }
+
+	  function isLight(color) {
+		let hex = color.replace('#', '');
+
+		// convert #fff => #ffffff
+		if(hex.length == 3){
+			hex = `${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
+		}
+
+		const c_r = parseInt(hex.substr(0, 2), 16);
+		const c_g = parseInt(hex.substr(2, 2), 16);
+		const c_b = parseInt(hex.substr(4, 2), 16);
+		const brightness = ((c_r * 299) + (c_g * 587) + (c_b * 114)) / 1000;
+		return brightness > 155;
+	}
+
+	var bgColor = getComputedStyle(document.documentElement).getPropertyValue('--r-background-color').trim();
+	var isLight = isLight(bgColor);
+
+	if(isLight){
+		document.body.classList.add('has-light-background');
+	} else {
+		document.body.classList.add('has-dark-background');
+	}
+
+      // default options to init reveal.js
+      var defaultOptions = {
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+        transition: 'default', // none/fade/slide/convex/concave/zoom
+        plugins: [
+          RevealMarkdown,
+          RevealHighlight,
+          RevealZoom,
+          RevealNotes,
+          RevealMath.MathJax3,
+		  RevealMermaid,
+		  RevealChart,
+		  RevealCustomControls,
+		  ElapsedTimeBar
+        ],
+
+
+    	allottedTime: 2100 * 1000,
+
+		mathjax3: {
+			mathjax: 'plugin/math/mathjax/tex-mml-chtml.js',
+		},
+		markdown: {
+		  gfm: true,
+		  mangle: true,
+		  pedantic: false,
+		  smartLists: false,
+		  smartypants: false,
+		},
+
+		mermaid: {
+			theme: isLight ? 'default' : 'dark',
+		},
+
+		customcontrols: {
+			controls: [
+			]
+		},
+      };
+
+      // options from URL query string
+      var queryOptions = Reveal().getQueryHash() || {};
+
+      var options = extend(defaultOptions, {"width":1300,"height":700,"margin":0.04,"controls":true,"progress":true,"slideNumber":false,"transition":"none","transitionSpeed":"default"}, queryOptions);
+    </script>
+
+    <script>
+      Reveal.initialize(options);
+    </script>
+  </body>
+
+  <!-- created with Advanced Slides -->
+</html>
